@@ -1,0 +1,182 @@
+package sequences
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/adjust/rmq/v3"
+	"gorm.io/gorm"
+	"github.com/go-redis/redis/v7"
+	"time"
+)
+
+// Construct tree of stages
+// Emit first event
+// Consume first event
+// Call matching consumer
+func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName string, numberOfConsumersForSequence int, sequence Sequence, storeFunc StoreFunc) (*rmq.Queue, error) {
+	// TODO: Error channel
+	opt, err := redis.ParseURL(redisURL)
+	if err != nil {
+		return nil, err
+	}
+
+	client := redis.NewClient(opt)
+
+	connection, err := rmq.OpenConnectionWithRedisClient("", client, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	taskQueue, err := connection.OpenQueue(taskQueueName)
+	if err != nil {
+		return nil, err
+	}
+
+	err = taskQueue.StartConsuming(10, time.Second)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := 1; i <= numberOfConsumersForSequence; i++ {
+		taskConsumer := &Consumer{
+			db:        db,
+			sequence:  sequence,
+			taskQueue: taskQueue,
+			storeFunc: storeFunc,
+		}
+		_, err = taskQueue.AddConsumer(fmt.Sprintf("task-consumer-%d", i), taskConsumer)
+		if err != nil {
+			return nil, err
+		}
+
+	}
+
+	return &taskQueue, nil
+}
+
+type Event struct {
+	EventType  string `json:"event_type"`
+	SequenceID uint   `json:"sequence_id"`
+	Payload    []byte `json:"input"`
+}
+
+type StoreFunc func(db *gorm.DB, payrunID uint, stage, status, errorMessage string) error
+
+type Consumer struct {
+	db        *gorm.DB
+	sequence  Sequence
+	taskQueue rmq.Queue
+	storeFunc StoreFunc
+}
+
+func NewConsumer(db *gorm.DB, sequence Sequence, queue rmq.Queue, store StoreFunc) Consumer {
+	return Consumer{
+		db:        db,
+		sequence:  sequence,
+		taskQueue: queue,
+		storeFunc: store,
+	}
+}
+
+func (consumer *Consumer) Consume(delivery rmq.Delivery) {
+	var event Event
+	if err := json.Unmarshal([]byte(delivery.Payload()), &event); err != nil {
+		// handle json error
+		if err := delivery.Reject(); err != nil {
+			// handle reject error
+			fmt.Println(err)
+		}
+		fmt.Println(err)
+		return
+	}
+
+	currentStage, err := consumer.findMatchingStage(event, delivery)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	fmt.Println("ABOUT TO PROCESS EVENT")
+	if err := consumer.processEvent(consumer.db, currentStage, event, delivery); err != nil {
+		fmt.Println(err)
+		return
+	}
+}
+
+func (consumer *Consumer) emitNextEvent(currentStage *Stage, sequenceID uint, payload []byte) error {
+	if currentStage.NextStage == nil {
+		return nil
+	}
+
+	nextTask := Event{
+		SequenceID: sequenceID,
+		EventType:  currentStage.NextStage.EventName,
+		Payload:    payload,
+	}
+
+	taskBytes, err := json.Marshal(nextTask)
+	if err != nil {
+		// handle error
+		return err
+	}
+
+	err = consumer.taskQueue.PublishBytes(taskBytes)
+	if err != nil {
+		// handle error
+		return err
+	}
+	return nil
+}
+
+func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event Event, delivery rmq.Delivery) error {
+	err := currentStage.ConsumerFunc(db, event.Payload)
+	if err != nil {
+		fmt.Println(err)
+		err := consumer.storeFunc(db, event.SequenceID, currentStage.EventName, "ERROR", err.Error())
+		if err != nil {
+			fmt.Println(err)
+			// Still reject msg on error
+		}
+
+		if err := delivery.Reject(); err != nil {
+			return err
+		}
+		return err
+	}
+
+	err = consumer.storeFunc(db, event.SequenceID, currentStage.EventName, "SUCCESS", "")
+	if err != nil {
+		return err
+	}
+	if err := delivery.Ack(); err != nil {
+		return err
+	}
+
+	if err := consumer.emitNextEvent(currentStage, event.SequenceID, event.Payload); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (consumer *Consumer) findMatchingStage(task Event, delivery rmq.Delivery) (*Stage, error) {
+	currentStage := consumer.sequence.Stages
+	for {
+		if currentStage.EventName == task.EventType {
+			// Found Stage return it
+			return currentStage, nil
+		}
+
+		// If there if isn't next stage reject as can't find
+		// appropriate stage
+		if currentStage.NextStage == nil {
+			if err := delivery.Reject(); err != nil {
+				return nil, err
+			}
+			return nil, errors.New("no stage found")
+		}
+
+		currentStage = currentStage.NextStage
+	}
+}
