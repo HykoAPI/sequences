@@ -14,7 +14,7 @@ import (
 // Emit first event
 // Consume first event
 // Call matching consumer
-func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName string, numberOfConsumersForSequence int, sequence Sequence, storeFunc StoreFunc) (*rmq.Queue, error) {
+func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName string, numberOfConsumersForSequence int, sequence Sequence, storeFunc StoreFunc, readFunc ReadFunc) (*rmq.Queue, error) {
 	// TODO: Error channel
 	opt, err := redis.ParseURL(redisURL)
 	if err != nil {
@@ -44,6 +44,7 @@ func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName strin
 			sequence:  sequence,
 			taskQueue: taskQueue,
 			storeFunc: storeFunc,
+			readFunc: readFunc,
 		}
 		_, err = taskQueue.AddConsumer(fmt.Sprintf("task-consumer-%d", i), taskConsumer)
 		if err != nil {
