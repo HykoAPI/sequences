@@ -59,15 +59,19 @@ type Event struct {
 	EventType  string `json:"event_type"`
 	SequenceID uint   `json:"sequence_id"`
 	Payload    []byte `json:"input"`
+	WaitUntil *time.Time `json:"wait_until"`
 }
 
-type StoreFunc func(db *gorm.DB, payrunID uint, stage, status, errorMessage string) error
+type StoreFunc func(db *gorm.DB, ID uint, stage, status, errorMessage string) error
+// TODO: Move to struct
+type ReadFunc func(db *gorm.DB, ID uint, stage string) (bool, string, string, error)
 
 type Consumer struct {
 	db        *gorm.DB
 	sequence  Sequence
 	taskQueue rmq.Queue
 	storeFunc StoreFunc
+	readFunc  ReadFunc
 }
 
 func NewConsumer(db *gorm.DB, sequence Sequence, queue rmq.Queue, store StoreFunc) Consumer {
@@ -89,6 +93,13 @@ func (consumer *Consumer) Consume(delivery rmq.Delivery) {
 		}
 		fmt.Println(err)
 		return
+	}
+	
+	if event.WaitUntil != nil {
+		if time.Now().UTC().Before(*event.WaitUntil) {
+			// Requeue event
+			delivery.Ack()
+		}
 	}
 
 	currentStage, err := consumer.findMatchingStage(event, delivery)
@@ -130,7 +141,22 @@ func (consumer *Consumer) emitNextEvent(currentStage *Stage, sequenceID uint, pa
 }
 
 func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event Event, delivery rmq.Delivery) error {
-	err := currentStage.ConsumerFunc(db, event.Payload)
+	// Read stage
+	exists, _, _, err := consumer.readFunc(db ,event.SequenceID, event.EventType)
+	if err != nil {
+		// Not acking or rejecting because we want to retry this message
+		return err
+	}
+
+	// If already run successfully then emit next event
+	if exists {
+		if err := consumer.emitNextEvent(currentStage, event.SequenceID, event.Payload); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	err = currentStage.ConsumerFunc(db, event.Payload)
 	if err != nil {
 		fmt.Println(err)
 		err := consumer.storeFunc(db, event.SequenceID, currentStage.EventName, "ERROR", err.Error())
