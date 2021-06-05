@@ -75,12 +75,13 @@ type Consumer struct {
 	readFunc  ReadFunc
 }
 
-func NewConsumer(db *gorm.DB, sequence Sequence, queue rmq.Queue, store StoreFunc) Consumer {
+func NewConsumer(db *gorm.DB, sequence Sequence, queue rmq.Queue, store StoreFunc, read ReadFunc) Consumer {
 	return Consumer{
 		db:        db,
 		sequence:  sequence,
 		taskQueue: queue,
 		storeFunc: store,
+		readFunc: read,
 	}
 }
 
