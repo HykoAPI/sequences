@@ -63,7 +63,7 @@ type Event struct {
 	WaitUntil *time.Time `json:"wait_until"`
 }
 
-type StoreFunc func(db *gorm.DB, ID uint, stage, status, errorMessage string) error
+type StoreFunc func(db *gorm.DB, ID uint, stage string, status Status, errorMessage string) error
 // TODO: Move to struct
 type ReadFunc func(db *gorm.DB, ID uint, stage string) (bool, string, string, error)
 
@@ -158,10 +158,10 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 		return nil
 	}
 
-	err = currentStage.ConsumerFunc(db, event.Payload)
-	if err != nil {
+	status, description := currentStage.ConsumerFunc(db, event.Payload)
+	if status == ERROR {
 		fmt.Println(err)
-		err := consumer.storeFunc(db, event.SequenceID, currentStage.EventName, "ERROR", err.Error())
+		err := consumer.storeFunc(db, event.SequenceID, currentStage.EventName, ERROR, description)
 		if err != nil {
 			fmt.Println(err)
 			// Still reject msg on error
@@ -173,7 +173,7 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 		return err
 	}
 
-	err = consumer.storeFunc(db, event.SequenceID, currentStage.EventName, "SUCCESS", "")
+	err = consumer.storeFunc(db, event.SequenceID, currentStage.EventName, status, description)
 	if err != nil {
 		return err
 	}
@@ -208,3 +208,10 @@ func (consumer *Consumer) findMatchingStage(task Event, delivery rmq.Delivery) (
 		currentStage = currentStage.NextStage
 	}
 }
+
+type Status string
+const (
+	ERROR Status = "ERROR"
+	SUCCESS Status = "SUCCESS"
+	SKIPPING Status = "SKIPPING"
+)

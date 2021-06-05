@@ -10,6 +10,6 @@ type Sequence struct {
 
 type Stage struct {
 	EventName    string                                `json:"event_name"`
-	ConsumerFunc func(db *gorm.DB, input []byte) error `json:"-"`
+	ConsumerFunc func(db *gorm.DB, input []byte) (Status, string) `json:"-"`
 	NextStage    *Stage                                `json:"-"`
 }
