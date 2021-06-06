@@ -160,7 +160,7 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 
 	status, description := currentStage.ConsumerFunc(db, event.Payload)
 	if status == ERROR {
-		fmt.Println(err)
+		fmt.Println(description)
 		err := consumer.storeFunc(db, event.SequenceID, currentStage.EventName, ERROR, description)
 		if err != nil {
 			fmt.Println(err)
