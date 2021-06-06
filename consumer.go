@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"github.com/adjust/rmq/v3"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 	"github.com/go-redis/redis/v7"
+	"os"
 	"time"
 )
 
@@ -73,6 +76,7 @@ type Consumer struct {
 	taskQueue rmq.Queue
 	storeFunc StoreFunc
 	readFunc  ReadFunc
+	logger zerolog.Logger
 }
 
 func NewConsumer(db *gorm.DB, sequence Sequence, queue rmq.Queue, store StoreFunc, read ReadFunc) Consumer {
@@ -82,7 +86,12 @@ func NewConsumer(db *gorm.DB, sequence Sequence, queue rmq.Queue, store StoreFun
 		taskQueue: queue,
 		storeFunc: store,
 		readFunc: read,
+		logger: zerolog.New(os.Stdout),
 	}
+}
+
+func (consumer *Consumer) SetLogger(logger zerolog.Logger) {
+	consumer.logger = logger
 }
 
 func (consumer *Consumer) Consume(delivery rmq.Delivery) {
@@ -91,16 +100,14 @@ func (consumer *Consumer) Consume(delivery rmq.Delivery) {
 		// handle json error
 		if err := delivery.Reject(); err != nil {
 			// handle reject error
-			fmt.Println(err)
+			log.Error().Err(err).Msg("error rejecting message")
 		}
-		fmt.Println(err)
+		log.Error().Err(err).Msg("error unmarshalling JSON payload")
 		return
 	}
 	
 	if event.WaitUntil != nil {
 		if time.Now().UTC().Before(*event.WaitUntil) {
-			// Requeue event
-			// Emit same event
 			consumer.republishEvent(delivery, event)
 			return
 		}
@@ -162,10 +169,9 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 
 	status, description, waitUntil := currentStage.ConsumerFunc(db, event.Payload)
 	if status == ERROR {
-		fmt.Println(description)
 		err := consumer.storeFunc(db, event.SequenceID, currentStage.EventName, ERROR, description)
 		if err != nil {
-			fmt.Println(err)
+			log.Debug().Err(err)
 			// Still reject msg on error
 		}
 
@@ -220,21 +226,22 @@ func (consumer *Consumer) findMatchingStage(task Event, delivery rmq.Delivery) (
 }
 
 func (consumer *Consumer) republishEvent(delivery rmq.Delivery, event Event) {
+	log.Trace().Str("event_type", event.EventType).Msg("republishing event")
 	taskBytes, err := json.Marshal(event)
 	if err != nil {
 		// DO NOT REJECT JUST WAIT UNTIL WE REPROCESS IT
-		fmt.Println(err)
+		log.Debug().Err(err)
 	}
 
 	err = consumer.taskQueue.PublishBytes(taskBytes)
 	if err != nil {
 		// handle error
-		fmt.Println(err)
+		log.Debug().Err(err)
 	}
 
 	// Then ack old one so that if we error on ack we'll at least reprocess both rather than neither
 	if err := delivery.Ack(); err != nil {
-		fmt.Println(err)
+		log.Debug().Err(err)
 		return
 	}
 	return
