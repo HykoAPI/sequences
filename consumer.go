@@ -100,7 +100,26 @@ func (consumer *Consumer) Consume(delivery rmq.Delivery) {
 	if event.WaitUntil != nil {
 		if time.Now().UTC().Before(*event.WaitUntil) {
 			// Requeue event
-			delivery.Ack()
+			// Emit same event
+			taskBytes, err := json.Marshal(event)
+			if err != nil {
+				// DO NOT REJECT JUST WAIT UNTIL WE REPROCESS IT
+				fmt.Println(err)
+				return
+			}
+
+			err = consumer.taskQueue.PublishBytes(taskBytes)
+			if err != nil {
+				// handle error
+				fmt.Println(err)
+				return
+			}
+
+			// Then ack old one so that if we error on ack we'll at least reprocess both rather than neither
+			if err := delivery.Ack(); err != nil {
+				fmt.Println(err)
+				return
+			}
 		}
 	}
 
