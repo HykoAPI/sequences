@@ -99,7 +99,6 @@ func (consumer *Consumer) Consume(delivery rmq.Delivery) {
 	
 	if event.WaitUntil != nil {
 		if time.Now().UTC().Before(*event.WaitUntil) {
-			fmt.Println("REQUEUING", *event.WaitUntil, time.Now().UTC())
 			// Requeue event
 			// Emit same event
 			taskBytes, err := json.Marshal(event)
@@ -131,7 +130,6 @@ func (consumer *Consumer) Consume(delivery rmq.Delivery) {
 		return
 	}
 
-	fmt.Println("ABOUT TO PROCESS EVENT")
 	if err := consumer.processEvent(consumer.db, currentStage, event, delivery); err != nil {
 		fmt.Println(err)
 		return
@@ -165,7 +163,6 @@ func (consumer *Consumer) emitNextEvent(currentStage *Stage, sequenceID uint, pa
 }
 
 func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event Event, delivery rmq.Delivery) error {
-	fmt.Println("PROCESSING ", currentStage.EventName, event.EventType, event.WaitUntil)
 	// Read stage
 	exists, status2, _, err := consumer.readFunc(db ,event.SequenceID, event.EventType)
 	if err != nil {
