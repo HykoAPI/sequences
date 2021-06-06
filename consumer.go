@@ -99,7 +99,7 @@ func (consumer *Consumer) Consume(delivery rmq.Delivery) {
 	
 	if event.WaitUntil != nil {
 		if time.Now().UTC().Before(*event.WaitUntil) {
-			fmt.Println("REQUEUING", *event.WaitUntil)
+			fmt.Println("REQUEUING", *event.WaitUntil, time.Now().UTC())
 			// Requeue event
 			// Emit same event
 			taskBytes, err := json.Marshal(event)
