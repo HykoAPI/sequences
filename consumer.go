@@ -101,25 +101,7 @@ func (consumer *Consumer) Consume(delivery rmq.Delivery) {
 		if time.Now().UTC().Before(*event.WaitUntil) {
 			// Requeue event
 			// Emit same event
-			taskBytes, err := json.Marshal(event)
-			if err != nil {
-				// DO NOT REJECT JUST WAIT UNTIL WE REPROCESS IT
-				fmt.Println(err)
-				return
-			}
-
-			err = consumer.taskQueue.PublishBytes(taskBytes)
-			if err != nil {
-				// handle error
-				fmt.Println(err)
-				return
-			}
-
-			// Then ack old one so that if we error on ack we'll at least reprocess both rather than neither
-			if err := delivery.Ack(); err != nil {
-				fmt.Println(err)
-				return
-			}
+			consumer.republishEvent(delivery, event)
 			return
 		}
 	}
@@ -205,25 +187,7 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 		// Requeue event
 		// Emit same event
 		event.WaitUntil = waitUntil
-		taskBytes, err := json.Marshal(event)
-		if err != nil {
-			// DO NOT REJECT JUST WAIT UNTIL WE REPROCESS IT
-			fmt.Println(err)
-			return nil
-		}
-
-		err = consumer.taskQueue.PublishBytes(taskBytes)
-		if err != nil {
-			// handle error
-			fmt.Println(err)
-			return nil
-		}
-
-		// Then ack old one so that if we error on ack we'll at least reprocess both rather than neither
-		if err := delivery.Ack(); err != nil {
-			fmt.Println(err)
-			return nil
-		}
+		consumer.republishEvent(delivery, event)
 		return nil
 	} else {
 		if err := consumer.emitNextEvent(currentStage, event.SequenceID, event.Payload, nil); err != nil {
@@ -253,6 +217,27 @@ func (consumer *Consumer) findMatchingStage(task Event, delivery rmq.Delivery) (
 
 		currentStage = currentStage.NextStage
 	}
+}
+
+func (consumer *Consumer) republishEvent(delivery rmq.Delivery, event Event) {
+	taskBytes, err := json.Marshal(event)
+	if err != nil {
+		// DO NOT REJECT JUST WAIT UNTIL WE REPROCESS IT
+		fmt.Println(err)
+	}
+
+	err = consumer.taskQueue.PublishBytes(taskBytes)
+	if err != nil {
+		// handle error
+		fmt.Println(err)
+	}
+
+	// Then ack old one so that if we error on ack we'll at least reprocess both rather than neither
+	if err := delivery.Ack(); err != nil {
+		fmt.Println(err)
+		return
+	}
+	return
 }
 
 type Status string
