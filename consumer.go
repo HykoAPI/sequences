@@ -99,6 +99,7 @@ func (consumer *Consumer) Consume(delivery rmq.Delivery) {
 	
 	if event.WaitUntil != nil {
 		if time.Now().UTC().Before(*event.WaitUntil) {
+			fmt.Println("REQUEUING")
 			// Requeue event
 			// Emit same event
 			taskBytes, err := json.Marshal(event)
@@ -120,6 +121,7 @@ func (consumer *Consumer) Consume(delivery rmq.Delivery) {
 				fmt.Println(err)
 				return
 			}
+			return
 		}
 	}
 
@@ -163,15 +165,16 @@ func (consumer *Consumer) emitNextEvent(currentStage *Stage, sequenceID uint, pa
 }
 
 func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event Event, delivery rmq.Delivery) error {
+	fmt.Println("PROCESSING ", currentStage.EventName, event.EventType, event.WaitUntil)
 	// Read stage
-	exists, _, _, err := consumer.readFunc(db ,event.SequenceID, event.EventType)
+	exists, status2, _, err := consumer.readFunc(db ,event.SequenceID, event.EventType)
 	if err != nil {
 		// Not acking or rejecting because we want to retry this message
 		return err
 	}
 
-	// If already run successfully then emit next event
-	if exists {
+	// If already run successfully and we're not set up to retry then emit next event
+	if Status(status2) != RETRY && exists {
 		if err := consumer.emitNextEvent(currentStage, event.SequenceID, event.Payload, nil); err != nil {
 			return err
 		}
@@ -201,8 +204,34 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 		return err
 	}
 
-	if err := consumer.emitNextEvent(currentStage, event.SequenceID, event.Payload, waitUntil); err != nil {
-		return err
+	if status == RETRY {
+		// Requeue event
+		// Emit same event
+		event.WaitUntil = waitUntil
+		taskBytes, err := json.Marshal(event)
+		if err != nil {
+			// DO NOT REJECT JUST WAIT UNTIL WE REPROCESS IT
+			fmt.Println(err)
+			return nil
+		}
+
+		err = consumer.taskQueue.PublishBytes(taskBytes)
+		if err != nil {
+			// handle error
+			fmt.Println(err)
+			return nil
+		}
+
+		// Then ack old one so that if we error on ack we'll at least reprocess both rather than neither
+		if err := delivery.Ack(); err != nil {
+			fmt.Println(err)
+			return nil
+		}
+		return nil
+	} else {
+		if err := consumer.emitNextEvent(currentStage, event.SequenceID, event.Payload, nil); err != nil {
+			return err
+		}
 	}
 
 	return nil
