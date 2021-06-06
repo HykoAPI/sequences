@@ -2,6 +2,7 @@ package sequences
 
 import (
 	"gorm.io/gorm"
+	"time"
 )
 
 type Sequence struct {
@@ -10,6 +11,6 @@ type Sequence struct {
 
 type Stage struct {
 	EventName    string                                `json:"event_name"`
-	ConsumerFunc func(db *gorm.DB, input []byte) (Status, string) `json:"-"`
+	ConsumerFunc func(db *gorm.DB, input []byte) (Status, string, *time.Time) `json:"-"`
 	NextStage    *Stage                                `json:"-"`
 }

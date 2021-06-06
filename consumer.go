@@ -136,7 +136,7 @@ func (consumer *Consumer) Consume(delivery rmq.Delivery) {
 	}
 }
 
-func (consumer *Consumer) emitNextEvent(currentStage *Stage, sequenceID uint, payload []byte) error {
+func (consumer *Consumer) emitNextEvent(currentStage *Stage, sequenceID uint, payload []byte, waitUntil *time.Time) error {
 	if currentStage.NextStage == nil {
 		return nil
 	}
@@ -145,6 +145,7 @@ func (consumer *Consumer) emitNextEvent(currentStage *Stage, sequenceID uint, pa
 		SequenceID: sequenceID,
 		EventType:  currentStage.NextStage.EventName,
 		Payload:    payload,
+		WaitUntil: waitUntil,
 	}
 
 	taskBytes, err := json.Marshal(nextTask)
@@ -171,13 +172,13 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 
 	// If already run successfully then emit next event
 	if exists {
-		if err := consumer.emitNextEvent(currentStage, event.SequenceID, event.Payload); err != nil {
+		if err := consumer.emitNextEvent(currentStage, event.SequenceID, event.Payload, nil); err != nil {
 			return err
 		}
 		return nil
 	}
 
-	status, description := currentStage.ConsumerFunc(db, event.Payload)
+	status, description, waitUntil := currentStage.ConsumerFunc(db, event.Payload)
 	if status == ERROR {
 		fmt.Println(description)
 		err := consumer.storeFunc(db, event.SequenceID, currentStage.EventName, ERROR, description)
@@ -200,7 +201,7 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 		return err
 	}
 
-	if err := consumer.emitNextEvent(currentStage, event.SequenceID, event.Payload); err != nil {
+	if err := consumer.emitNextEvent(currentStage, event.SequenceID, event.Payload, waitUntil); err != nil {
 		return err
 	}
 
@@ -233,4 +234,5 @@ const (
 	ERROR Status = "ERROR"
 	SUCCESS Status = "SUCCESS"
 	SKIPPING Status = "SKIPPING"
+	RETRY Status = "RETRY"
 )
