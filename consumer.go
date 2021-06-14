@@ -153,14 +153,14 @@ func (consumer *Consumer) emitNextEvent(currentStage *Stage, sequenceID uint, pa
 
 func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event Event, delivery rmq.Delivery) error {
 	// Read stage
-	exists, status2, _, err := consumer.readFunc(db ,event.SequenceID, event.EventType)
+	exists, existingStatus, _, err := consumer.readFunc(db ,event.SequenceID, event.EventType)
 	if err != nil {
 		// Not acking or rejecting because we want to retry this message
 		return err
 	}
 
 	// If already run successfully and we're not set up to retry then emit next event
-	if Status(status2) != RETRY && exists {
+	if exists && Status(existingStatus) == SUCCESS {
 		if err := consumer.emitNextEvent(currentStage, event.SequenceID, event.Payload, nil); err != nil {
 			return err
 		}
