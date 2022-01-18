@@ -151,7 +151,21 @@ func (consumer *Consumer) emitNextEvent(currentStage *Stage, sequenceID uint, pa
 	return nil
 }
 
+
 func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event Event, delivery rmq.Delivery) error {
+	// Handle panics
+	defer func() {
+		if err := recover(); err != nil {
+			log.Error().Str("panic", fmt.Sprintf("%v", err))
+			err := consumer.storeFunc(db, event.SequenceID, currentStage.EventName, ERROR, fmt.Sprintf("%v", err))
+			if err != nil {
+				log.Debug().Err(err)
+			}
+
+			return
+		}
+	}()
+
 	// Read stage
 	exists, existingStatus, _, err := consumer.readFunc(db ,event.SequenceID, event.EventType)
 	if err != nil {
