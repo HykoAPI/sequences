@@ -156,7 +156,7 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 	// Handle panics
 	defer func() {
 		if err := recover(); err != nil {
-			fmt.Printf("Got panic: %v\n", err)
+			log.Error().Str("panic", fmt.Sprintf("%v", err))
 			err := consumer.storeFunc(db, event.SequenceID, currentStage.EventName, ERROR, fmt.Sprintf("%v", err))
 			if err != nil {
 				log.Debug().Err(err)
