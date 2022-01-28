@@ -26,7 +26,14 @@ func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName strin
 
 	client := redis.NewClient(opt)
 
-	connection, err := rmq.OpenConnectionWithRedisClient("", client, nil)
+	errChannel := make(chan error)
+	go func(errChannel chan error) {
+		for err := range errChannel {
+			fmt.Println(err)
+		}
+	}(errChannel)
+
+	connection, err := rmq.OpenConnectionWithRedisClient("", client, errChannel)
 	if err != nil {
 		return nil, err
 	}
