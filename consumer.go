@@ -195,8 +195,9 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 			log.Debug().Err(err)
 			// Still reject msg on error
 		}
-
+		fmt.Println("ATTEMPTING TO REJECT")
 		if err := delivery.Reject(); err != nil {
+			fmt.Println("ERROR REJECTING MESSAGE")
 			return err
 		}
 		return err
