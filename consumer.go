@@ -206,18 +206,29 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 	if err != nil {
 		return err
 	}
+	fmt.Println("ATTEMPTING TO ACK")
 	if err := delivery.Ack(); err != nil {
+		fmt.Println("FAILED TO ACK")
 		return err
 	}
+	fmt.Println("ACKED SUCCESSFULLY")
 
 	if status == RETRY {
+		fmt.Println("REQUEUING SAME EVENT")
 		// Requeue event
 		// Emit same event
 		event.WaitUntil = waitUntil
 		consumer.republishEvent(delivery, event)
 		return nil
 	} else {
+		fmt.Println("ATTEMPTING TO EMIT NEXT EVENT")
+		fmt.Println("CURRENT STAGE", currentStage.EventName)
+		fmt.Println("NEXT STAGE", currentStage.NextStage)
+		if currentStage.NextStage != nil {
+			fmt.Println("NEXT STAGE NAME", currentStage.NextStage.EventName)
+		}
 		if err := consumer.emitNextEvent(currentStage, event.SequenceID, event.Payload, nil); err != nil {
+			fmt.Println("FAILED TO EMIT NEXT EVENT")
 			return err
 		}
 	}
