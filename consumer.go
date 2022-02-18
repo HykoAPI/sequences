@@ -146,6 +146,9 @@ func (consumer *Consumer) emitNextEvent(currentStage *Stage, sequenceID uint, pa
 		WaitUntil: waitUntil,
 	}
 
+	fmt.Println("EMITTING EVNET")
+	fmt.Println(nextTask.EventType)
+
 	taskBytes, err := json.Marshal(nextTask)
 	if err != nil {
 		// handle error
