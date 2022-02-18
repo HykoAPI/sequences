@@ -18,7 +18,6 @@ import (
 // Consume first event
 // Call matching consumer
 func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName string, numberOfConsumersForSequence int, sequence Sequence, storeFunc StoreFunc, readFunc ReadFunc) (*rmq.Queue, rmq.Connection, error) {
-	// TODO: Error channel
 	opt, err := redis.ParseURL(redisURL)
 	if err != nil {
 		return nil, nil, err
@@ -28,14 +27,10 @@ func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName strin
 
 	errChannel := make(chan error)
 	go func(errChannel chan error) {
-		fmt.Println("HELLO ERROR CHANNEL")
 		for err := range errChannel {
 			fmt.Println(err)
 		}
-		fmt.Println("GOODBYE ERROR CHANNEL")
 	}(errChannel)
-
-	errChannel<-errors.New("test error")
 
 	connection, err := rmq.OpenConnectionWithRedisClient("", client, errChannel)
 	if err != nil {
@@ -43,23 +38,17 @@ func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName strin
 	}
 
 	go func() {
-		defer func() {
-			fmt.Println("LEAVING STATS")
-		}()
-		fmt.Println("HIYA")
 		for {
 			queues, err := connection.GetOpenQueues()
 			if err != nil {
 				fmt.Println("error", err)
-				return
+				continue
 			}
-			fmt.Println("QUEUES")
-			fmt.Println(queues)
+
 			stats, err := connection.CollectStats(queues)
 			if err != nil {
-				fmt.Println("ERROR GETTING STATS")
-				fmt.Println("error", err)
-				return
+				fmt.Println(err)
+				continue
 			}
 
 			fmt.Println("Stats")
@@ -200,7 +189,6 @@ func (consumer *Consumer) emitNextEvent(currentStage *Stage, sequenceID uint, pa
 func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event Event, delivery rmq.Delivery) error {
 	// Handle panics
 	defer func() {
-		fmt.Println("IN THE DEFER")
 		if err := recover(); err != nil {
 			log.Error().Str("panic", fmt.Sprintf("%v", err))
 			err := consumer.storeFunc(db, event.SequenceID, currentStage.EventName, ERROR, fmt.Sprintf("%v", err))
