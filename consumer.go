@@ -43,6 +43,9 @@ func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName strin
 	}
 
 	go func() {
+		defer func() {
+			fmt.Println("LEAVING STATS")
+		}()
 		fmt.Println("HIYA")
 		for {
 			queues, err := connection.GetOpenQueues()
