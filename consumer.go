@@ -58,7 +58,8 @@ func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName strin
 				continue
 			}
 
-			fmt.Println(stats)
+			fmt.Println("Stats")
+			fmt.Println(stats.String())
 			time.Sleep(time.Second*5)
 		}
 	}()
