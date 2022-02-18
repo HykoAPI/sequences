@@ -42,6 +42,24 @@ func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName strin
 		return nil, err
 	}
 
+	go func() {
+		for {
+			queues, err := connection.GetOpenQueues()
+			if err != nil {
+				fmt.Println("error", err)
+				continue
+			}
+			stats, err := connection.CollectStats(queues)
+			if err != nil {
+				fmt.Println("error", err)
+				continue
+			}
+
+			fmt.Println(stats)
+			time.Sleep(time.Second*5)
+		}
+	}()
+
 	taskQueue, err := connection.OpenQueue(taskQueueName)
 	if err != nil {
 		return nil, err
@@ -161,7 +179,7 @@ func (consumer *Consumer) emitNextEvent(currentStage *Stage, sequenceID uint, pa
 	}
 
 	fmt.Println(string(taskBytes))
-	
+
 	err = consumer.taskQueue.PublishBytes(taskBytes)
 	if err != nil {
 		// handle error
