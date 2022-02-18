@@ -246,6 +246,7 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 func (consumer *Consumer) findMatchingStage(task Event, delivery rmq.Delivery) (*Stage, error) {
 	currentStage := consumer.sequence.Stages
 	for {
+		fmt.Println("LOOPING BABY")
 		if currentStage.EventName == task.EventType {
 			// Found Stage return it
 			return currentStage, nil
