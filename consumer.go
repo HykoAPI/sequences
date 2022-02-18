@@ -73,7 +73,7 @@ func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName strin
 		return nil, nil, err
 	}
 
-	err = taskQueue.StartConsuming(10, time.Second)
+	err = taskQueue.StartConsuming(100000, time.Second)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -222,6 +222,7 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 
 	// If already run successfully and we're not set up to retry then emit next event
 	if exists && Status(existingStatus) == SUCCESS {
+		// TODO: ACK HERE
 		if err := consumer.emitNextEvent(currentStage, event.SequenceID, event.Payload, nil); err != nil {
 			return err
 		}
