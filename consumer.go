@@ -112,6 +112,8 @@ func (consumer *Consumer) Consume(delivery rmq.Delivery) {
 		log.Error().Err(err).Msg("error unmarshalling JSON payload")
 		return
 	}
+
+	fmt.Println("CONSUMING EVENT", event.EventType)
 	
 	if event.WaitUntil != nil {
 		if time.Now().UTC().Before(*event.WaitUntil) {
@@ -172,6 +174,7 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 			return
 		}
 	}()
+	fmt.Println("PROCESSING EVENT", event.EventType)
 
 	// Read stage
 	exists, existingStatus, _, err := consumer.readFunc(db ,event.SequenceID, event.EventType)
