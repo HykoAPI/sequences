@@ -35,6 +35,8 @@ func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName strin
 		fmt.Println("GOODBYE ERROR CHANNEL")
 	}(errChannel)
 
+	errChannel<-errors.New("test error")
+
 	connection, err := rmq.OpenConnectionWithRedisClient("", client, errChannel)
 	if err != nil {
 		return nil, err
@@ -158,6 +160,8 @@ func (consumer *Consumer) emitNextEvent(currentStage *Stage, sequenceID uint, pa
 		return err
 	}
 
+	fmt.Println(string(taskBytes))
+	
 	err = consumer.taskQueue.PublishBytes(taskBytes)
 	if err != nil {
 		// handle error
@@ -170,6 +174,7 @@ func (consumer *Consumer) emitNextEvent(currentStage *Stage, sequenceID uint, pa
 func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event Event, delivery rmq.Delivery) error {
 	// Handle panics
 	defer func() {
+		fmt.Println("IN THE DEFER")
 		if err := recover(); err != nil {
 			log.Error().Str("panic", fmt.Sprintf("%v", err))
 			err := consumer.storeFunc(db, event.SequenceID, currentStage.EventName, ERROR, fmt.Sprintf("%v", err))
