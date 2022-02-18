@@ -28,9 +28,11 @@ func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName strin
 
 	errChannel := make(chan error)
 	go func(errChannel chan error) {
+		fmt.Println("HELLO ERROR CHANNEL")
 		for err := range errChannel {
 			fmt.Println(err)
 		}
+		fmt.Println("GOODBYE ERROR CHANNEL")
 	}(errChannel)
 
 	connection, err := rmq.OpenConnectionWithRedisClient("", client, errChannel)
@@ -102,6 +104,7 @@ func (consumer *Consumer) SetLogger(logger zerolog.Logger) {
 }
 
 func (consumer *Consumer) Consume(delivery rmq.Delivery) {
+	fmt.Println("IN CONSUME")
 	var event Event
 	if err := json.Unmarshal([]byte(delivery.Payload()), &event); err != nil {
 		// handle json error
