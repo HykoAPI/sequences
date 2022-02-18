@@ -54,6 +54,7 @@ func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName strin
 			fmt.Println(queues)
 			stats, err := connection.CollectStats(queues)
 			if err != nil {
+				fmt.Println("ERROR GETTING STATS")
 				fmt.Println("error", err)
 				continue
 			}
