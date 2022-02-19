@@ -57,6 +57,19 @@ func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName strin
 		}
 	}()
 
+	go func() {
+		cleaner := rmq.NewCleaner(connection)
+
+		for range time.Tick(time.Second) {
+			returned, err := cleaner.Clean()
+			if err != nil {
+				log.Printf("failed to clean: %s", err)
+				continue
+			}
+			log.Printf("cleaned %d", returned)
+		}
+	}()
+
 	taskQueue, err := connection.OpenQueue(taskQueueName)
 	if err != nil {
 		return nil, nil, err
@@ -210,7 +223,9 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 
 	// If already run successfully and we're not set up to retry then emit next event
 	if exists && Status(existingStatus) == SUCCESS {
-		// TODO: ACK HERE
+		if err := delivery.Ack(); err != nil {
+			return err
+		}
 		if err := consumer.emitNextEvent(currentStage, event.SequenceID, event.Payload, nil); err != nil {
 			return err
 		}
