@@ -38,35 +38,14 @@ func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName strin
 	}
 
 	go func() {
-		for {
-			queues, err := connection.GetOpenQueues()
-			if err != nil {
-				fmt.Println("error", err)
-				continue
-			}
-
-			stats, err := connection.CollectStats(queues)
-			if err != nil {
-				fmt.Println(err)
-				continue
-			}
-
-			fmt.Println("Stats")
-			fmt.Println(stats.String())
-			time.Sleep(time.Second*5)
-		}
-	}()
-
-	go func() {
 		cleaner := rmq.NewCleaner(connection)
 
 		for range time.Tick(time.Second) {
-			returned, err := cleaner.Clean()
+			_, err := cleaner.Clean()
 			if err != nil {
 				log.Printf("failed to clean: %s", err)
 				continue
 			}
-			log.Printf("cleaned %d", returned)
 		}
 	}()
 
@@ -134,7 +113,6 @@ func (consumer *Consumer) SetLogger(logger zerolog.Logger) {
 }
 
 func (consumer *Consumer) Consume(delivery rmq.Delivery) {
-	fmt.Println("IN CONSUME")
 	var event Event
 	if err := json.Unmarshal([]byte(delivery.Payload()), &event); err != nil {
 		// handle json error
@@ -146,8 +124,6 @@ func (consumer *Consumer) Consume(delivery rmq.Delivery) {
 		return
 	}
 
-	fmt.Println("CONSUMING EVENT", event.EventType)
-	
 	if event.WaitUntil != nil {
 		if time.Now().UTC().Before(*event.WaitUntil) {
 			consumer.republishEvent(delivery, event)
@@ -179,7 +155,6 @@ func (consumer *Consumer) emitNextEvent(currentStage *Stage, sequenceID uint, pa
 		WaitUntil: waitUntil,
 	}
 
-	fmt.Println("EMITTING EVNET")
 	fmt.Println(nextTask.EventType)
 
 	taskBytes, err := json.Marshal(nextTask)
@@ -212,7 +187,6 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 			return
 		}
 	}()
-	fmt.Println("PROCESSING EVENT", event.EventType)
 
 	// Read stage
 	exists, existingStatus, _, err := consumer.readFunc(db ,event.SequenceID, event.EventType)
@@ -239,9 +213,7 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 			log.Debug().Err(err)
 			// Still reject msg on error
 		}
-		fmt.Println("ATTEMPTING TO REJECT")
 		if err := delivery.Reject(); err != nil {
-			fmt.Println("ERROR REJECTING MESSAGE")
 			return err
 		}
 		return err
@@ -251,29 +223,18 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 	if err != nil {
 		return err
 	}
-	fmt.Println("ATTEMPTING TO ACK")
 	if err := delivery.Ack(); err != nil {
-		fmt.Println("FAILED TO ACK")
 		return err
 	}
-	fmt.Println("ACKED SUCCESSFULLY")
 
 	if status == RETRY {
-		fmt.Println("REQUEUING SAME EVENT")
 		// Requeue event
 		// Emit same event
 		event.WaitUntil = waitUntil
 		consumer.republishEvent(delivery, event)
 		return nil
 	} else {
-		fmt.Println("ATTEMPTING TO EMIT NEXT EVENT")
-		fmt.Println("CURRENT STAGE", currentStage.EventName)
-		fmt.Println("NEXT STAGE", currentStage.NextStage)
-		if currentStage.NextStage != nil {
-			fmt.Println("NEXT STAGE NAME", currentStage.NextStage.EventName)
-		}
 		if err := consumer.emitNextEvent(currentStage, event.SequenceID, event.Payload, nil); err != nil {
-			fmt.Println("FAILED TO EMIT NEXT EVENT")
 			return err
 		}
 	}
@@ -284,7 +245,6 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 func (consumer *Consumer) findMatchingStage(task Event, delivery rmq.Delivery) (*Stage, error) {
 	currentStage := consumer.sequence.Stages
 	for {
-		fmt.Println("LOOPING BABY")
 		if currentStage.EventName == task.EventType {
 			// Found Stage return it
 			return currentStage, nil
