@@ -5,19 +5,48 @@ import (
 	"errors"
 	"fmt"
 	"github.com/adjust/rmq/v3"
+	"github.com/go-redis/redis/v7"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
-	"github.com/go-redis/redis/v7"
 	"os"
 	"time"
 )
 
+// SetupConsumersForSequence does the following:
 // Construct tree of stages
 // Emit first event
 // Consume first event
 // Call matching consumer
 func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName string, numberOfConsumersForSequence int, sequence Sequence, storeFunc StoreFunc, readFunc ReadFunc) (*rmq.Queue, rmq.Connection, error) {
+	taskQueue, connection, err := SetupTaskQueue(redisURL, taskQueueName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if err := (*taskQueue).StartConsuming(100000, time.Second); err != nil {
+		return nil, nil, err
+	}
+
+	for i := 1; i <= numberOfConsumersForSequence; i++ {
+		taskConsumer := &Consumer{
+			db:        db,
+			sequence:  sequence,
+			taskQueue: *taskQueue,
+			storeFunc: storeFunc,
+			readFunc:  readFunc,
+		}
+
+		_, err = (*taskQueue).AddConsumer(fmt.Sprintf("task-consumer-%d", i), taskConsumer)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return taskQueue, connection, nil
+}
+
+func SetupTaskQueue(redisURL string, taskQueueName string) (*rmq.Queue, rmq.Connection, error) {
 	opt, err := redis.ParseURL(redisURL)
 	if err != nil {
 		return nil, nil, err
@@ -34,7 +63,7 @@ func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName strin
 
 	connection, err := rmq.OpenConnectionWithRedisClient("", client, errChannel)
 	if err != nil {
-		return nil,  nil, err
+		return nil, nil, err
 	}
 
 	go func() {
@@ -54,37 +83,18 @@ func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName strin
 		return nil, nil, err
 	}
 
-	err = taskQueue.StartConsuming(100000, time.Second)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	for i := 1; i <= numberOfConsumersForSequence; i++ {
-		taskConsumer := &Consumer{
-			db:        db,
-			sequence:  sequence,
-			taskQueue: taskQueue,
-			storeFunc: storeFunc,
-			readFunc: readFunc,
-		}
-		_, err = taskQueue.AddConsumer(fmt.Sprintf("task-consumer-%d", i), taskConsumer)
-		if err != nil {
-			return nil, nil, err
-		}
-
-	}
-
 	return &taskQueue, connection, nil
 }
 
 type Event struct {
-	EventType  string `json:"event_type"`
-	SequenceID uint   `json:"sequence_id"`
-	Payload    []byte `json:"input"`
-	WaitUntil *time.Time `json:"wait_until"`
+	EventType  string     `json:"event_type"`
+	SequenceID uint       `json:"sequence_id"`
+	Payload    []byte     `json:"input"`
+	WaitUntil  *time.Time `json:"wait_until"`
 }
 
 type StoreFunc func(db *gorm.DB, ID uint, stage string, status Status, errorMessage string) error
+
 // TODO: Move to struct
 type ReadFunc func(db *gorm.DB, ID uint, stage string) (bool, string, string, error)
 
@@ -94,7 +104,7 @@ type Consumer struct {
 	taskQueue rmq.Queue
 	storeFunc StoreFunc
 	readFunc  ReadFunc
-	logger zerolog.Logger
+	logger    zerolog.Logger
 }
 
 func NewConsumer(db *gorm.DB, sequence Sequence, queue rmq.Queue, store StoreFunc, read ReadFunc) Consumer {
@@ -103,8 +113,8 @@ func NewConsumer(db *gorm.DB, sequence Sequence, queue rmq.Queue, store StoreFun
 		sequence:  sequence,
 		taskQueue: queue,
 		storeFunc: store,
-		readFunc: read,
-		logger: zerolog.New(os.Stdout),
+		readFunc:  read,
+		logger:    zerolog.New(os.Stdout),
 	}
 }
 
@@ -152,7 +162,7 @@ func (consumer *Consumer) emitNextEvent(currentStage *Stage, sequenceID uint, pa
 		SequenceID: sequenceID,
 		EventType:  currentStage.NextStage.EventName,
 		Payload:    payload,
-		WaitUntil: waitUntil,
+		WaitUntil:  waitUntil,
 	}
 
 	fmt.Println(nextTask.EventType)
@@ -173,7 +183,6 @@ func (consumer *Consumer) emitNextEvent(currentStage *Stage, sequenceID uint, pa
 	return nil
 }
 
-
 func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event Event, delivery rmq.Delivery) error {
 	// Handle panics
 	defer func() {
@@ -189,7 +198,7 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 	}()
 
 	// Read stage
-	exists, existingStatus, _, err := consumer.readFunc(db ,event.SequenceID, event.EventType)
+	exists, existingStatus, _, err := consumer.readFunc(db, event.SequenceID, event.EventType)
 	if err != nil {
 		// Not acking or rejecting because we want to retry this message
 		return err
@@ -286,9 +295,10 @@ func (consumer *Consumer) republishEvent(delivery rmq.Delivery, event Event) {
 }
 
 type Status string
+
 const (
-	ERROR Status = "ERROR"
-	SUCCESS Status = "SUCCESS"
+	ERROR    Status = "ERROR"
+	SUCCESS  Status = "SUCCESS"
 	SKIPPING Status = "SKIPPING"
-	RETRY Status = "RETRY"
+	RETRY    Status = "RETRY"
 )
