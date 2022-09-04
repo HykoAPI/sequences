@@ -1,6 +1,7 @@
 package sequences
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -51,6 +52,8 @@ func SetupTaskQueue(redisURL string, taskQueueName string) (*rmq.Queue, rmq.Conn
 	if err != nil {
 		return nil, nil, err
 	}
+
+	opt.TLSConfig = &tls.Config{InsecureSkipVerify: true}
 
 	client := redis.NewClient(opt)
 
