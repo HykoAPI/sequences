@@ -19,8 +19,8 @@ import (
 // Emit first event
 // Consume first event
 // Call matching consumer
-func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName string, numberOfConsumersForSequence int, sequence Sequence, storeFunc StoreFunc, readFunc ReadFunc) (*rmq.Queue, rmq.Connection, error) {
-	taskQueue, connection, err := SetupTaskQueue(redisURL, taskQueueName)
+func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName string, numberOfConsumersForSequence int, sequence Sequence, storeFunc StoreFunc, readFunc ReadFunc, config *tls.Config) (*rmq.Queue, rmq.Connection, error) {
+	taskQueue, connection, err := SetupTaskQueue(redisURL, taskQueueName, config)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -47,14 +47,14 @@ func SetupConsumersForSequence(db *gorm.DB, redisURL string, taskQueueName strin
 	return taskQueue, connection, nil
 }
 
-func SetupTaskQueue(redisURL string, taskQueueName string) (*rmq.Queue, rmq.Connection, error) {
+func SetupTaskQueue(redisURL string, taskQueueName string, config *tls.Config) (*rmq.Queue, rmq.Connection, error) {
 	opt, err := redis.ParseURL(redisURL)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	if opt.TLSConfig != nil {
-		opt.TLSConfig = &tls.Config{InsecureSkipVerify: true}
+	if config != nil {
+		opt.TLSConfig = config
 	}
 
 	client := redis.NewClient(opt)
