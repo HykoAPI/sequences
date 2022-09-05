@@ -1,7 +1,6 @@
 package sequences
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,8 +52,9 @@ func SetupTaskQueue(redisURL string, taskQueueName string) (*rmq.Queue, rmq.Conn
 		return nil, nil, err
 	}
 
-	opt.TLSConfig = &tls.Config{InsecureSkipVerify: true}
-	opt.DialTimeout = time.Second * 10
+	if opt.TLSConfig != nil {
+		opt.TLSConfig.InsecureSkipVerify = true
+	}
 
 	client := redis.NewClient(opt)
 
