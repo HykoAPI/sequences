@@ -54,7 +54,7 @@ func SetupTaskQueue(redisURL string, taskQueueName string) (*rmq.Queue, rmq.Conn
 	}
 
 	opt.TLSConfig = &tls.Config{InsecureSkipVerify: true}
-	opt.ReadTimeout = time.Second * 1
+	opt.ReadTimeout = time.Second * 5
 
 	client := redis.NewClient(opt)
 
