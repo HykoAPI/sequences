@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"time"
+
 	"github.com/adjust/rmq/v3"
 	"github.com/go-redis/redis/v7"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
-	"os"
-	"time"
 )
 
 // SetupConsumersForSequence does the following:
@@ -220,6 +221,10 @@ func (consumer *Consumer) processEvent(db *gorm.DB, currentStage *Stage, event E
 		return nil
 	}
 
+	if err := consumer.storeFunc(db, event.SequenceID, currentStage.EventName, STARTED, ""); err != nil {
+		return err
+	}
+
 	status, description, waitUntil := currentStage.ConsumerFunc(db, event.Payload)
 	if status == ERROR {
 		err := consumer.storeFunc(db, event.SequenceID, currentStage.EventName, ERROR, description)
@@ -302,6 +307,7 @@ func (consumer *Consumer) republishEvent(delivery rmq.Delivery, event Event) {
 type Status string
 
 const (
+	STARTED  Status = "STARTED"
 	ERROR    Status = "ERROR"
 	SUCCESS  Status = "SUCCESS"
 	SKIPPING Status = "SKIPPING"
